@@ -108,4 +108,5 @@ export async function delCachePattern(pattern) {
   }
 }
 
+export { redisClient };
 export default redisClient;

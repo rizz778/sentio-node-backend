@@ -3,13 +3,10 @@ import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import connectDB from './config/db.js';
+import './config/redis.js';
 import errorHandler from './middlewares/errorHandler.js';
-import authRoutes from './routes/authRouter.js';
 import chatRouter from './routes/chatRouter.js';
-import profileRouter from './routes/profileRouter.js'; // Ensure this route is defined
-import passport from 'passport';
-import './config/passport.js';
-import session from 'express-session';
+import profileRouter from './routes/profileRouter.js';
 
 // Load environment variables
 dotenv.config();
@@ -27,36 +24,36 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Session middleware for Passport (IMPORTANT: Ensure SESSION_SECRET is set in .env)
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET, // Load from .env
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: false, // Use HTTPS in production
-      httpOnly: true, // Prevent client-side JS from accessing the cookie
-      maxAge: 1000 * 60 * 60 * 24, // 1 day
-    },
-  })
-);
-
-// Passport Middleware
-app.use(passport.initialize());
-app.use(passport.session());
-
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/chat', chatRouter);
-app.use('/api/profile', profileRouter); // Ensure this route is defined
-// Error Handler Middleware
-app.use(errorHandler);
-
-// Start Server
-const PORT = process.env.PORT || 4000;
-mongoose.connection.once('open', () => {
-  console.log('Connected to MongoDB');
-  app.listen(PORT, () => {
-    console.log(`🚀 Server running on PORT ${PORT}`);
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    service: 'sentio-node-backend',
+    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
   });
 });
+
+app.get('/', (req, res) => {
+  res.status(200).json({
+    message: 'Sentio Node.js Backend (Downstream Storage Engine) is active',
+  });
+});
+
+// Downstream Business Routes
+app.use('/api/chat', chatRouter);
+app.use('/api/profile', profileRouter);
+
+// Global Error Handler
+app.use(errorHandler);
+
+// Start Server (Port 5000 for Node backend; Gateway runs on 4000, FastAPI on 8000)
+const PORT = process.env.PORT || 5000;
+
+mongoose.connection.once('open', () => {
+  console.log('[MongoDB] Connected successfully');
+  app.listen(PORT, () => {
+    console.log(`🚀 Node Backend running on PORT ${PORT}`);
+  });
+});
+
+export default app;
