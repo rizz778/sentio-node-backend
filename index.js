@@ -5,6 +5,7 @@ import cors from 'cors';
 import connectDB from './config/db.js';
 import './config/redis.js';
 import errorHandler from './middlewares/errorHandler.js';
+import authRouter from './routes/authRouter.js';
 import chatRouter from './routes/chatRouter.js';
 import profileRouter from './routes/profileRouter.js';
 
@@ -40,6 +41,8 @@ app.get('/', (req, res) => {
 });
 
 // Downstream Business Routes
+app.use('/internal/users', authRouter); // For Gateway internal user creation/sync
+app.use('/api/auth', authRouter);       // For proxied auth sync requests
 app.use('/api/chat', chatRouter);
 app.use('/api/profile', profileRouter);
 

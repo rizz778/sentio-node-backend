@@ -1,36 +1,66 @@
+import mongoose from 'mongoose';
+import User from '../models/User.js';
+import { getCache, setCache } from '../config/redis.js';
+
 /**
  * Downstream User Identity Middleware
  * ===================================
  * Node backend operates as an internal downstream microservice.
  * Upstream Gateway authenticates the client and injects trusted identity headers.
- * This middleware extracts the user identity without performing local JWT/passport checks.
+ * Resolves both raw MongoDB ObjectIds and Google UIDs to valid MongoDB user references.
  */
 
-export const downstreamAuth = (req, res, next) => {
-  // Extract user ID from upstream headers, query, or body
-  const userId =
-    req.headers['x-user-id'] ||
-    req.headers['x-user-uid'] ||
-    req.query.userId ||
-    req.body.userId ||
-    (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')
-      ? extractUserIdFromToken(req.headers.authorization.split(' ')[1])
-      : null);
+export const downstreamAuth = async (req, res, next) => {
+  try {
+    const rawUserId =
+      req.headers['x-user-id'] ||
+      req.headers['x-user-uid'] ||
+      req.query.userId ||
+      req.body.userId ||
+      (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')
+        ? extractUserIdFromToken(req.headers.authorization.split(' ')[1])
+        : null);
 
-  if (!userId) {
-    return res.status(401).json({
-      message: 'Unauthorized: Downstream request requires x-user-id header or userId parameter',
-    });
+    if (!rawUserId) {
+      return res.status(401).json({
+        message: 'Unauthorized: Downstream request requires x-user-id header or userId parameter',
+      });
+    }
+
+    let resolvedObjectId = null;
+
+    // Check if rawUserId is already a valid MongoDB ObjectId
+    if (mongoose.Types.ObjectId.isValid(rawUserId)) {
+      resolvedObjectId = new mongoose.Types.ObjectId(rawUserId);
+    } else {
+      // Resolve Google UID to MongoDB ObjectId using Redis cache or DB lookup
+      const cachedMongoId = await getCache(`sentio:user:${rawUserId}:mongoid`);
+      if (cachedMongoId && mongoose.Types.ObjectId.isValid(cachedMongoId)) {
+        resolvedObjectId = new mongoose.Types.ObjectId(cachedMongoId);
+      } else {
+        const dbUser = await User.findOne({ googleId: rawUserId });
+        if (dbUser) {
+          resolvedObjectId = dbUser._id;
+          await setCache(`sentio:user:${rawUserId}:mongoid`, dbUser._id.toString(), 604800);
+        } else {
+          // If user record doesn't exist yet, generate a deterministic or temporary fallback ID
+          console.warn(`[DownstreamAuth] User with googleId ${rawUserId} not found in DB`);
+        }
+      }
+    }
+
+    req.user = {
+      _id: resolvedObjectId || rawUserId,
+      id: (resolvedObjectId || rawUserId).toString(),
+      uid: rawUserId,
+      email: req.headers['x-user-email'] || '',
+    };
+
+    next();
+  } catch (error) {
+    console.error('[DownstreamAuth] Error resolving identity:', error);
+    next(error);
   }
-
-  // Attach trusted user identity to request object
-  req.user = {
-    _id: userId,
-    id: userId,
-    email: req.headers['x-user-email'] || '',
-  };
-
-  next();
 };
 
 function extractUserIdFromToken(token) {
