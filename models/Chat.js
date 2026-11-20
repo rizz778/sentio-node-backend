@@ -4,7 +4,7 @@ import mongoose from "mongoose";
 const messageSchema = new mongoose.Schema({
   sender: {
     type: String,
-    enum: ["user", "bot"],
+    enum: ["user", "bot", "model", "assistant"],
     required: [true, "Message sender is required"]
   },
   // Encrypted content field

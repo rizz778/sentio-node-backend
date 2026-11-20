@@ -1,164 +1,208 @@
 import Chat from '../models/Chat.js';
 import mongoose from 'mongoose';
-import User from '../models/User.js';
 import { encryptMessage, decryptMessage } from '../config/encrypt.js';
+import { getCache, setCache, delCache, redisClient } from '../config/redis.js';
 
-// Original functions from your controller
+/**
+ * Creates a new chat session.
+ * Invalidates the cached session list in Redis.
+ */
 export const createSession = async (req, res) => {
   try {
-    if (!req.user || !req.user.id) {
-      return res.status(401).json({ message: "Unauthorized: User not found" });
-    }
-
+    const userId = req.user._id;
     const { sessionName } = req.body;
     if (!sessionName) {
       return res.status(400).json({ message: "Session name is required" });
     }
 
-    // Create new chat session
     const newSession = await Chat.create({
-      user: req.user._id,
+      user: userId,
       sessionName,
-      message: [],
+      messages: [],
     });
 
-    await newSession.save();
+    // Invalidate user's session list cache in Redis
+    await delCache(`sentio:user:${userId}:sessions`);
 
-    res.status(201).json({
-      sessionId: newSession._id,  // Directly send sessionId
+    return res.status(201).json({
+      sessionId: newSession._id,
       sessionName: newSession.sessionName,
-      tokens: res.locals.tokens,  // Updated token balance
     });
-
-    console.log("New session created:", newSession);
   } catch (error) {
-    console.error("Error creating session:", error);
-    res.status(500).json({ message: "Server Error" });
+    console.error("[ChatController] Error creating session:", error);
+    return res.status(500).json({ message: "Server Error", error: error.message });
   }
 };
 
+/**
+ * Retrieves all chat sessions for the authenticated user.
+ * Cache-aside with Redis (TTL: 5 minutes).
+ */
 export const getSessions = async (req, res) => {
   try {
-    if (!req.user || !req.user.id) {
-      return res.status(401).json({ message: "Unauthorized: User not found" });
+    const userId = req.user._id;
+    const cacheKey = `sentio:user:${userId}:sessions`;
+
+    // 1. Check Redis cache
+    const cachedSessions = await getCache(cacheKey);
+    if (cachedSessions) {
+      return res.status(200).json(cachedSessions);
     }
 
-    const sessions = await Chat.find({ user: req.user._id }).select("sessionName createdAt");
-    res.status(200).json(sessions);
+    // 2. Query MongoDB
+    const sessions = await Chat.find({ user: userId })
+      .select("sessionName createdAt")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // 3. Cache in Redis
+    await setCache(cacheKey, sessions, 300);
+
+    return res.status(200).json(sessions);
   } catch (error) {
-    console.error("Error retrieving sessions:", error);
-    res.status(500).json({ message: "Server Error" });
+    console.error("[ChatController] Error retrieving sessions:", error);
+    return res.status(500).json({ message: "Server Error", error: error.message });
   }
 };
 
+/**
+ * Retrieves all messages for a session.
+ * Cache-aside with Redis (TTL: 1 hour).
+ */
 export const getSessionMessages = async (req, res) => {
   const { sessionId } = req.params;
-  
-  // Validate session ID format
+
   if (!mongoose.Types.ObjectId.isValid(sessionId)) {
     return res.status(400).json({ message: "Invalid session ID format" });
   }
-  
+
   try {
-    // Find session with more specific query and lean() for performance
-    const session = await Chat.findOne({ 
-      _id: sessionId, 
-      user: req.user._id 
-    }).lean();
-    
-    // Handle not found case
-    if (!session) {
-      return res.status(404).json({ message: "Chat session not found or unauthorized" });
+    const cacheKey = `sentio:session:${sessionId}:messages`;
+
+    // 1. Check Redis cache
+    const cachedSession = await getCache(cacheKey);
+    if (cachedSession) {
+      return res.status(200).json(cachedSession);
     }
-    
-    // Decrypt messages and transform response
+
+    // 2. Query MongoDB
+    const session = await Chat.findById(sessionId).lean();
+
+    if (!session) {
+      return res.status(404).json({ message: "Chat session not found" });
+    }
+
+    // 3. Decrypt messages
     const decryptedSession = {
       _id: session._id,
       sessionName: session.sessionName,
       createdAt: session.createdAt,
-      messages: session.messages.map(msg => ({
+      messages: (session.messages || []).map((msg) => ({
         _id: msg._id,
         sender: msg.sender,
-        text: msg.iv && msg.authTag ? 
-          decryptMessage(msg.text, msg.iv, msg.authTag) : 
-          msg.text,
-        timestamp: msg.timestamp
-      }))
+        text:
+          msg.iv && msg.authTag
+            ? decryptMessage(msg.text, msg.iv, msg.authTag)
+            : msg.text,
+        emotion: msg.emotion || "unknown",
+        distressScore: msg.distressScore || 0,
+        timestamp: msg.timestamp,
+      })),
     };
-    
+
+    // 4. Cache in Redis
+    await setCache(cacheKey, decryptedSession, 3600);
+
     return res.status(200).json(decryptedSession);
   } catch (error) {
-    console.error("Error retrieving session messages:", error);
-    return res.status(500).json({ 
-      message: "Failed to retrieve messages", 
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined 
+    console.error("[ChatController] Error retrieving session messages:", error);
+    return res.status(500).json({
+      message: "Failed to retrieve messages",
+      error: error.message,
     });
   }
 };
 
+/**
+ * Appends a message to a session.
+ * Encrypts and persists in MongoDB, and updates Redis caches.
+ */
 export const addMessage = async (req, res) => {
   const { sessionId } = req.params;
   const { sender, text, timestamp, emotion, distressScore } = req.body;
-  
-  // Input validation
+
   if (!mongoose.Types.ObjectId.isValid(sessionId)) {
     return res.status(400).json({ message: "Invalid session ID format" });
   }
-  
+
   if (!sender || typeof sender !== 'string') {
     return res.status(400).json({ message: "Valid sender is required" });
   }
-  
+
   if (!text || typeof text !== 'string' || text.trim() === "") {
     return res.status(400).json({ message: "Message text cannot be empty" });
   }
-  
+
   try {
-    // Prepare message object with encryption
+    // Encrypt text before storing in MongoDB
+    const encryptionData = encryptMessage(text.trim());
     const messageData = {
       sender,
-      ...encryptMessage(text.trim()),
-      timestamp: timestamp || new Date()
+      ...encryptionData,
+      timestamp: timestamp ? new Date(timestamp) : new Date(),
     };
-    
-    // Add emotion data if available
+
     if (emotion) {
       messageData.emotion = emotion;
     }
-    
+
     if (typeof distressScore === 'number' && distressScore >= 0 && distressScore <= 10) {
       messageData.distressScore = distressScore;
     }
-    
-    // Find and update in one operation for better performance
-    const session = await Chat.findOneAndUpdate(
-      { _id: sessionId, user: req.user._id },
+
+    // Persist to MongoDB
+    const session = await Chat.findByIdAndUpdate(
+      sessionId,
       { $push: { messages: messageData } },
       { new: true, runValidators: true }
     );
-    
+
     if (!session) {
-      return res.status(404).json({ message: "Chat session not found or unauthorized" });
+      return res.status(404).json({ message: "Chat session not found" });
     }
-    
-    // Log the added message
-    console.log(`[Chat] Message added to session ${sessionId}:`, {
-      sender,
-      text: text.trim(),
-      emotion,
-      distressScore,
-      timestamp: messageData.timestamp
-    });
-    // Return minimal response
-    return res.status(201).json({ 
+
+    // Invalidate full session cache in Redis
+    const cacheKey = `sentio:session:${sessionId}:messages`;
+    await delCache(cacheKey);
+
+    // Sync to Redis 5-message sliding window shared with FastAPI
+    if (redisClient && redisClient.status === 'ready') {
+      try {
+        const slidingKey = `sentio:session:${sessionId}:recent_messages`;
+        const slidingEntry = JSON.stringify({
+          sender,
+          text: text.trim(),
+          emotion: emotion || "unknown",
+          distressScore: distressScore || 0,
+          timestamp: messageData.timestamp,
+        });
+        await redisClient.rpush(slidingKey, slidingEntry);
+        await redisClient.ltrim(slidingKey, -5, -1);
+      } catch (redisErr) {
+        console.warn("[ChatController] Sliding window update error:", redisErr.message);
+      }
+    }
+
+    const addedMsg = session.messages[session.messages.length - 1];
+    return res.status(201).json({
       message: "Message added successfully",
-      messageId: session.messages[session.messages.length - 1]._id
+      messageId: addedMsg ? addedMsg._id : null,
     });
   } catch (error) {
-    console.error("Error adding message:", error);
-    return res.status(500).json({ 
-      message: "Failed to add message", 
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    console.error("[ChatController] Error adding message:", error);
+    return res.status(500).json({
+      message: "Failed to add message",
+      error: error.message,
     });
   }
 };

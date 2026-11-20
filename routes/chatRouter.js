@@ -5,18 +5,21 @@ import {
   getSessionMessages,
   addMessage,
 } from "../controllers/chatController.js";
-import protect from "../middlewares/authMiddleware.js";
+import downstreamAuth from "../middlewares/authMiddleware.js";
 import errorHandler from "../middlewares/errorHandler.js";
-import { checkTokens } from "../middlewares/tokenMiddleware.js";
+
 const router = express.Router();
 
-// Routes
-router.post("/sessions", protect,checkTokens, createSession); // Create a new session
-router.get("/sessions", protect, getSessions); // Get all sessions
-router.get("/sessions/:sessionId", protect, getSessionMessages); // Get messages for a session
-router.post("/sessions/:sessionId/messages", protect, addMessage); // Add message to session
+// Extract trusted identity from headers
+router.use(downstreamAuth);
 
-// Global error handler (should be last)
+// Routes
+router.post("/sessions", createSession); // Create a new session
+router.get("/sessions", getSessions); // Get all sessions for user
+router.get("/sessions/:sessionId", getSessionMessages); // Get messages for a session
+router.post("/sessions/:sessionId/messages", addMessage); // Add message to session
+
+// Route error handler
 router.use(errorHandler);
 
 export default router;

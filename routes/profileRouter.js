@@ -1,22 +1,26 @@
 import express from "express";
 import { upload } from '../config/cloudinary.js';
 import {
-    saveUserProfile, 
-  getUserProfile, 
-  uploadProfilePicture, 
+  saveUserProfile,
+  getUserProfile,
+  uploadProfilePicture,
   deleteProfilePicture,
-   getUserEmotionAnalytics
-
-} from "../controllers/userController.js"
-import protect from "../middlewares/authMiddleware.js";
+  getUserEmotionAnalytics,
+} from "../controllers/userController.js";
+import downstreamAuth from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
-router.use(protect);
 
-// Profile routes
+// Extract trusted identity from headers
+router.use(downstreamAuth);
+
+// Profile routes (support both / and /:userId)
 router.get('/', getUserProfile);
+router.get('/:userId', getUserProfile);
 router.post('/', saveUserProfile);
-router.post('/upload-picture',upload.single('profilePicture'), uploadProfilePicture);
-router.delete('/delete-picture',deleteProfilePicture);
-router.get('/user', getUserEmotionAnalytics);
+router.post('/:userId', saveUserProfile);
+router.post('/upload-picture', upload.single('profilePicture'), uploadProfilePicture);
+router.delete('/delete-picture', deleteProfilePicture);
+router.get('/user/analytics', getUserEmotionAnalytics);
+
 export default router;
