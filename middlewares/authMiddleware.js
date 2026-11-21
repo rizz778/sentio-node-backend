@@ -43,8 +43,14 @@ export const downstreamAuth = async (req, res, next) => {
           resolvedObjectId = dbUser._id;
           await setCache(`sentio:user:${rawUserId}:mongoid`, dbUser._id.toString(), 604800);
         } else {
-          // If user record doesn't exist yet, generate a deterministic or temporary fallback ID
-          console.warn(`[DownstreamAuth] User with googleId ${rawUserId} not found in DB`);
+          // User not found — sync may not have completed yet.
+          // Return 404 so the client knows to trigger /auth/google sync first.
+          console.warn(`[DownstreamAuth] User with googleId ${rawUserId} not found in DB — sync may be pending`);
+          return res.status(404).json({
+            success: false,
+            message: 'User account not found. Please sign in again.',
+            code: 'USER_NOT_SYNCED',
+          });
         }
       }
     }

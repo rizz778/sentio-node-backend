@@ -1,4 +1,6 @@
+import mongoose from "mongoose";
 import UserProfile from "../models/UserProfile.js";
+import User from "../models/User.js";
 import { cloudinary } from "../config/cloudinary.js";
 import Chat from '../models/Chat.js';
 import { getCache, setCache, delCache } from '../config/redis.js';
@@ -9,20 +11,38 @@ import { getCache, setCache, delCache } from '../config/redis.js';
  */
 export const saveUserProfile = async (req, res) => {
   try {
-    const userId = req.params.userId || req.user.id || req.user._id;
+    const rawUserId = req.params.userId || req.user?.id || req.user?._id;
+    if (!rawUserId) {
+      return res.status(400).json({ success: false, message: "User ID is required" });
+    }
+
+    let resolvedId = null;
+    if (mongoose.Types.ObjectId.isValid(rawUserId)) {
+      resolvedId = new mongoose.Types.ObjectId(rawUserId);
+    } else {
+      const dbUser = await User.findOne({ googleId: rawUserId }).select('_id');
+      if (dbUser) {
+        resolvedId = dbUser._id;
+      }
+    }
+
+    if (!resolvedId) {
+      return res.status(404).json({ success: false, message: "User account not found to associate profile" });
+    }
+
     const userData = req.body;
 
-    let userProfile = await UserProfile.findOne({ userId });
+    let userProfile = await UserProfile.findOne({ userId: resolvedId });
 
     if (userProfile) {
-      userProfile = await UserProfile.findOneAndUpdate({ userId }, userData, { new: true });
+      userProfile = await UserProfile.findOneAndUpdate({ userId: resolvedId }, userData, { new: true });
     } else {
-      userProfile = new UserProfile({ userId, ...userData });
+      userProfile = new UserProfile({ userId: resolvedId, ...userData });
       await userProfile.save();
     }
 
     // Update Redis cache (TTL: 24 hours)
-    const cacheKey = `sentio:profile:${userId}`;
+    const cacheKey = `sentio:profile:${resolvedId}`;
     await setCache(cacheKey, userProfile, 86400);
 
     return res.status(200).json({ success: true, userProfile });
@@ -46,12 +66,28 @@ export const saveUserProfile = async (req, res) => {
  */
 export const getUserProfile = async (req, res) => {
   try {
-    const userId = req.params.userId || req.user?.id || req.user?._id;
-    if (!userId) {
+    const rawUserId = req.params.userId || req.user?.id || req.user?._id;
+    if (!rawUserId) {
       return res.status(400).json({ success: false, message: "User ID is required" });
     }
 
-    const cacheKey = `sentio:profile:${userId}`;
+    // Resolve rawUserId to valid MongoDB ObjectId if it's a Google UID string
+    let resolvedId = null;
+    if (mongoose.Types.ObjectId.isValid(rawUserId)) {
+      resolvedId = new mongoose.Types.ObjectId(rawUserId);
+    } else {
+      const dbUser = await User.findOne({ googleId: rawUserId }).select('_id');
+      if (dbUser) {
+        resolvedId = dbUser._id;
+      }
+    }
+
+    if (!resolvedId) {
+      // User hasn't synced or profile doesn't exist yet — return clean empty state
+      return res.status(200).json({ success: true, userProfile: null });
+    }
+
+    const cacheKey = `sentio:profile:${resolvedId}`;
 
     // 1. Check Redis cache
     const cachedProfile = await getCache(cacheKey);
@@ -60,10 +96,10 @@ export const getUserProfile = async (req, res) => {
     }
 
     // 2. Query MongoDB
-    const userProfile = await UserProfile.findOne({ userId }).lean();
+    const userProfile = await UserProfile.findOne({ userId: resolvedId }).lean();
 
     if (!userProfile) {
-      return res.status(404).json({ success: false, message: "Profile not found" });
+      return res.status(200).json({ success: true, userProfile: null });
     }
 
     // 3. Cache in Redis

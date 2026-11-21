@@ -25,8 +25,10 @@ export const createSession = async (req, res) => {
     await delCache(`sentio:user:${userId}:sessions`);
 
     return res.status(201).json({
+      _id: newSession._id,
       sessionId: newSession._id,
       sessionName: newSession.sessionName,
+      createdAt: newSession.createdAt,
     });
   } catch (error) {
     console.error("[ChatController] Error creating session:", error);

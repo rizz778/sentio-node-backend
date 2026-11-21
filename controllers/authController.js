@@ -24,15 +24,22 @@ export const syncUserHandler = async (req, res) => {
     let initialSessionId = null;
 
     if (!user) {
-      // 2. Create new user in MongoDB (Google-authenticated only)
-      user = new User({
-        googleId: userId,
-        name: name || userEmail.split('@')[0],
-        username: name || userEmail.split('@')[0],
-        email: userEmail,
-        avatar: picture || '',
-      });
-      await user.save();
+      // 2. Create new user in MongoDB (Google-authenticated only).
+      // Use findOneAndUpdate with upsert so concurrent requests or stale indexes
+      // never cause a duplicate-key crash — the operation is idempotent.
+      user = await User.findOneAndUpdate(
+        { googleId: userId },
+        {
+          $setOnInsert: {
+            googleId: userId,
+            email: userEmail,
+            name: name || userEmail.split('@')[0],
+            username: name || userEmail.split('@')[0],
+            avatar: picture || '',
+          },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
       isNewUser = true;
 
       // 3. Create initial Chat session for the new user
