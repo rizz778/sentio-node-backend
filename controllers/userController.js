@@ -30,20 +30,29 @@ export const saveUserProfile = async (req, res) => {
       return res.status(404).json({ success: false, message: "User account not found to associate profile" });
     }
 
-    const userData = req.body;
+    // Strip immutable/metadata fields from body to prevent Mongoose modification errors
+    const { _id, __v, createdAt, updatedAt, userId: _, ...cleanData } = req.body || {};
 
     let userProfile = await UserProfile.findOne({ userId: resolvedId });
 
     if (userProfile) {
-      userProfile = await UserProfile.findOneAndUpdate({ userId: resolvedId }, userData, { new: true });
+      userProfile = await UserProfile.findOneAndUpdate(
+        { userId: resolvedId },
+        cleanData,
+        { new: true, runValidators: true }
+      );
     } else {
-      userProfile = new UserProfile({ userId: resolvedId, ...userData });
+      userProfile = new UserProfile({ userId: resolvedId, ...cleanData });
       await userProfile.save();
     }
 
-    // Update Redis cache (TTL: 24 hours)
-    const cacheKey = `sentio:profile:${resolvedId}`;
-    await setCache(cacheKey, userProfile, 86400);
+    // Update Redis cache (TTL: 24 hours) - non-blocking
+    try {
+      const cacheKey = `sentio:profile:${resolvedId}`;
+      await setCache(cacheKey, userProfile, 86400);
+    } catch (cacheErr) {
+      console.warn("[UserController] Redis profile cache skipped:", cacheErr.message);
+    }
 
     return res.status(200).json({ success: true, userProfile });
   } catch (error) {

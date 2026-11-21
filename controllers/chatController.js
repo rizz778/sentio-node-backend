@@ -21,8 +21,12 @@ export const createSession = async (req, res) => {
       messages: [],
     });
 
-    // Invalidate user's session list cache in Redis
-    await delCache(`sentio:user:${userId}:sessions`);
+    // Invalidate user's session list cache in Redis (non-blocking)
+    try {
+      await delCache(`sentio:user:${userId}:sessions`);
+    } catch (cacheErr) {
+      console.warn("[ChatController] Cache invalidation skipped:", cacheErr.message);
+    }
 
     return res.status(201).json({
       _id: newSession._id,
