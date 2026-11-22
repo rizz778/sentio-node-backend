@@ -4,6 +4,7 @@ import {
   getSessions,
   getSessionMessages,
   addMessage,
+  deleteSession,
 } from "../controllers/chatController.js";
 import downstreamAuth from "../middlewares/authMiddleware.js";
 import errorHandler from "../middlewares/errorHandler.js";
@@ -18,6 +19,7 @@ router.post("/sessions", createSession); // Create a new session
 router.get("/sessions", getSessions); // Get all sessions for user
 router.get("/sessions/:sessionId", getSessionMessages); // Get messages for a session
 router.post("/sessions/:sessionId/messages", addMessage); // Add message to session
+router.delete("/sessions/:sessionId", deleteSession); // Delete a session
 
 // Route error handler
 router.use(errorHandler);

@@ -46,10 +46,13 @@ export const saveUserProfile = async (req, res) => {
       await userProfile.save();
     }
 
-    // Update Redis cache (TTL: 24 hours) - non-blocking
+    // Update Redis cache with latest profile (both ObjectId and Google UID keys)
     try {
       const cacheKey = `sentio:profile:${resolvedId}`;
       await setCache(cacheKey, userProfile, 86400);
+      if (rawUserId && rawUserId !== resolvedId.toString()) {
+        await setCache(`sentio:profile:${rawUserId}`, userProfile, 86400);
+      }
     } catch (cacheErr) {
       console.warn("[UserController] Redis profile cache skipped:", cacheErr.message);
     }
