@@ -204,10 +204,51 @@ export const getUserEmotionAnalytics = async (req, res) => {
 
     const userSessions = await Chat.find({ user: userId }).lean();
 
+    const emptyAnalytics = {
+      totalSessions: 0,
+      totalUserMessages: 0,
+      averageDistressScore: 0,
+      emotionCounts: {
+        happy: 0,
+        sad: 0,
+        angry: 0,
+        fear: 0,
+        surprise: 0,
+        disgust: 0,
+        neutral: 0,
+        unknown: 0,
+      },
+      emotionDistribution: {
+        happy: 0,
+        sad: 0,
+        angry: 0,
+        fear: 0,
+        surprise: 0,
+        disgust: 0,
+        neutral: 0,
+        unknown: 0,
+      },
+      emotionPercentages: {
+        happy: 0,
+        sad: 0,
+        angry: 0,
+        fear: 0,
+        surprise: 0,
+        disgust: 0,
+        neutral: 0,
+        unknown: 0,
+      },
+      sessionsByDistress: { high: [], medium: [], low: [] },
+      sessionAnalytics: [],
+      distressTrend: [],
+      emotionTrend: [],
+    };
+
     if (!userSessions || userSessions.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "No chat sessions found for this user",
+      return res.status(200).json({
+        success: true,
+        analytics: emptyAnalytics,
+        data: emptyAnalytics,
       });
     }
 
@@ -226,49 +267,93 @@ export const getUserEmotionAnalytics = async (req, res) => {
 
     const distressTrend = [];
     const emotionTrend = [];
+    const sessionsByDistress = { high: [], medium: [], low: [] };
+    const sessionAnalytics = [];
 
     for (const session of userSessions) {
       const userMessages = (session.messages || []).filter((msg) => msg.sender === 'user');
+      let sessionDistressSum = 0;
+      let sessionDistressCount = 0;
 
       for (const message of userMessages) {
         totalUserMessages++;
 
         if (message.emotion) {
-          emotionCounts[message.emotion] = (emotionCounts[message.emotion] || 0) + 1;
+          const em = message.emotion.toLowerCase();
+          emotionCounts[em] = (emotionCounts[em] || 0) + 1;
 
           emotionTrend.push({
             timestamp: message.timestamp,
-            emotion: message.emotion,
+            emotion: em,
             sessionId: session._id,
-            sessionName: session.sessionName,
+            sessionName: session.sessionName || "Chat Session",
           });
         }
 
         if (typeof message.distressScore === 'number') {
           totalDistressScore += message.distressScore;
+          sessionDistressSum += message.distressScore;
+          sessionDistressCount++;
 
           distressTrend.push({
             timestamp: message.timestamp,
             score: message.distressScore,
             sessionId: session._id,
+            sessionName: session.sessionName || "Chat Session",
           });
         }
       }
+
+      const avgDistress = sessionDistressCount > 0
+        ? Number((sessionDistressSum / sessionDistressCount).toFixed(1))
+        : 0;
+
+      const sessionItem = {
+        sessionId: session._id,
+        sessionName: session.sessionName || "Chat Session",
+        avgDistress,
+        averageDistress: avgDistress,
+        messageCount: session.messages?.length || 0,
+        createdAt: session.createdAt || session.updatedAt || new Date().toISOString(),
+      };
+
+      sessionAnalytics.push(sessionItem);
+
+      if (avgDistress >= 7) {
+        sessionsByDistress.high.push(sessionItem);
+      } else if (avgDistress >= 4) {
+        sessionsByDistress.medium.push(sessionItem);
+      } else {
+        sessionsByDistress.low.push(sessionItem);
+      }
+    }
+
+    const totalEmotions = Object.values(emotionCounts).reduce((a, b) => a + b, 0);
+    const emotionPercentages = {};
+    for (const [k, v] of Object.entries(emotionCounts)) {
+      emotionPercentages[k] = totalEmotions > 0 ? Math.round((v / totalEmotions) * 100) : 0;
     }
 
     const averageDistressScore =
-      totalUserMessages > 0 ? (totalDistressScore / totalUserMessages).toFixed(2) : 0;
+      totalUserMessages > 0 ? Number((totalDistressScore / totalUserMessages).toFixed(2)) : 0;
+
+    const payload = {
+      totalSessions: userSessions.length,
+      totalUserMessages,
+      averageDistressScore,
+      emotionCounts,
+      emotionDistribution: emotionCounts,
+      emotionPercentages,
+      sessionsByDistress,
+      sessionAnalytics,
+      distressTrend,
+      emotionTrend,
+    };
 
     return res.status(200).json({
       success: true,
-      analytics: {
-        totalSessions: userSessions.length,
-        totalUserMessages,
-        averageDistressScore,
-        emotionDistribution: emotionCounts,
-        distressTrend,
-        emotionTrend,
-      },
+      analytics: payload,
+      data: payload,
     });
   } catch (error) {
     console.error("[UserController] Error calculating emotion analytics:", error);

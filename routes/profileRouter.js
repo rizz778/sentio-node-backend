@@ -14,13 +14,18 @@ const router = express.Router();
 // Extract trusted identity from headers
 router.use(downstreamAuth);
 
-// Profile routes (support both / and /:userId)
+// ── Specific routes MUST come before parameterized /:userId ─────────────────
+router.get('/emotion/user', getUserEmotionAnalytics);
+router.get('/user/analytics', getUserEmotionAnalytics);
+router.get('/analytics', getUserEmotionAnalytics);
+
+router.post('/upload-picture', upload.single('profilePicture'), uploadProfilePicture);
+router.delete('/delete-picture', deleteProfilePicture);
+
+// ── Profile routes (support both / and /:userId) ─────────────────────────────
 router.get('/', getUserProfile);
 router.get('/:userId', getUserProfile);
 router.post('/', saveUserProfile);
 router.post('/:userId', saveUserProfile);
-router.post('/upload-picture', upload.single('profilePicture'), uploadProfilePicture);
-router.delete('/delete-picture', deleteProfilePicture);
-router.get('/user/analytics', getUserEmotionAnalytics);
 
 export default router;
