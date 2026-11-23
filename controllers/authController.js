@@ -51,7 +51,7 @@ export const syncUserHandler = async (req, res) => {
       await initialSession.save();
       initialSessionId = initialSession._id;
 
-      console.log(`[UserSync] New user created: ${user.email} (MongoDB ID: ${user._id})`);
+      console.log(`[UserSync] ✨ [${req.id || '-'}] New user created: ${user.email} (MongoDB ID: ${user._id})`);
     } else {
       // Update googleId or avatar if updated on Google's end
       let modified = false;

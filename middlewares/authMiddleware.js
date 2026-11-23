@@ -22,6 +22,7 @@ export const downstreamAuth = async (req, res, next) => {
         : null);
 
     if (!rawUserId) {
+      console.warn(`[DownstreamAuth] ⚠️ [${req.id || '-'}] Unauthorized request to ${req.originalUrl || req.url}: missing x-user-id`);
       return res.status(401).json({
         message: 'Unauthorized: Downstream request requires x-user-id header or userId parameter',
       });

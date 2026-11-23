@@ -5,6 +5,7 @@ import cors from 'cors';
 import connectDB from './config/db.js';
 import './config/redis.js';
 import errorHandler from './middlewares/errorHandler.js';
+import requestLogger from './middlewares/logger.js';
 import authRouter from './routes/authRouter.js';
 import chatRouter from './routes/chatRouter.js';
 import profileRouter from './routes/profileRouter.js';
@@ -20,6 +21,9 @@ connectDB();
 
 // Enable CORS
 app.use(cors());
+
+// Global structured HTTP request logger
+app.use(requestLogger);
 
 // Middlewares
 app.use(express.json());

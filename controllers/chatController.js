@@ -26,6 +26,8 @@ export const createSession = async (req, res) => {
       messages: [],
     });
 
+    console.log(`[ChatController] ✨ [${req.id || '-'}] Created session ${newSession._id} ("${sessionName}") for user ${userId}`);
+
     // Invalidate user's session list cache in Redis (non-blocking)
     try {
       await delCache(`sentio:user:${userId}:sessions`);
@@ -280,6 +282,10 @@ export const addMessage = async (req, res) => {
     }
 
     const addedMsg = session.messages[session.messages.length - 1];
+    console.log(
+      `[ChatController] 💾 [${req.id || '-'}] Message persisted to session ${sessionId} | ` +
+      `Sender: ${sender} | Emotion: ${emotion || 'none'} | Distress: ${distressScore ?? 'none'}`
+    );
     return res.status(201).json({
       message: "Message added successfully",
       messageId: addedMsg ? addedMsg._id : null,
