@@ -208,6 +208,7 @@ export const getUserEmotionAnalytics = async (req, res) => {
       totalSessions: 0,
       totalUserMessages: 0,
       averageDistressScore: 0,
+      dominantEmotion: 'neutral',
       emotionCounts: {
         happy: 0,
         sad: 0,
@@ -337,10 +338,16 @@ export const getUserEmotionAnalytics = async (req, res) => {
     const averageDistressScore =
       totalUserMessages > 0 ? Number((totalDistressScore / totalUserMessages).toFixed(2)) : 0;
 
+    const dominantEmotion =
+      Object.entries(emotionCounts)
+        .filter(([em]) => em !== 'unknown')
+        .sort((a, b) => b[1] - a[1])[0]?.[0] || 'neutral';
+
     const payload = {
       totalSessions: userSessions.length,
       totalUserMessages,
       averageDistressScore,
+      dominantEmotion,
       emotionCounts,
       emotionDistribution: emotionCounts,
       emotionPercentages,

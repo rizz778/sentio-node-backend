@@ -195,6 +195,8 @@ export const getSessionMessages = async (req, res) => {
       _id: session._id,
       sessionName: session.sessionName,
       createdAt: session.createdAt,
+      conversationSummary: session.conversationSummary || "",
+      lastSummarizedAt: session.lastSummarizedAt || null,
       messages: decryptedMessages,
     };
 
@@ -296,5 +298,51 @@ export const addMessage = async (req, res) => {
       message: "Failed to add message",
       error: error.message,
     });
+  }
+};
+
+/**
+ * Updates the rolling conversation summary for a session (cache write-back from FastAPI).
+ */
+export const updateSessionSummary = async (req, res) => {
+  const { sessionId } = req.params;
+  const { summary } = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(sessionId)) {
+    return res.status(400).json({ message: "Invalid session ID format" });
+  }
+
+  if (typeof summary !== 'string') {
+    return res.status(400).json({ message: "Valid summary string is required" });
+  }
+
+  try {
+    const session = await Chat.findByIdAndUpdate(
+      sessionId,
+      {
+        conversationSummary: summary.trim(),
+        lastSummarizedAt: new Date(),
+      },
+      { new: true }
+    );
+
+    if (!session) {
+      return res.status(404).json({ message: "Chat session not found" });
+    }
+
+    console.log(
+      `[ChatController] 📝 [${req.id || '-'}] Updated conversation summary for session ${sessionId} (${summary.trim().length} chars)`
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Summary updated successfully",
+      sessionId,
+      conversationSummary: session.conversationSummary,
+      lastSummarizedAt: session.lastSummarizedAt,
+    });
+  } catch (error) {
+    console.error("[ChatController] Error updating summary:", error);
+    return res.status(500).json({ message: "Server Error", error: error.message });
   }
 };

@@ -71,6 +71,14 @@ const chatSchema = new mongoose.Schema({
     maxlength: [100, "Session name cannot exceed 100 characters"]
   },
   messages: [messageSchema],
+  conversationSummary: {
+    type: String,
+    default: "",
+  },
+  lastSummarizedAt: {
+    type: Date,
+    default: null,
+  },
   createdAt: {
     type: Date,
     default: Date.now,
