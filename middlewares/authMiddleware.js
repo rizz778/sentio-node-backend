@@ -39,14 +39,22 @@ export const downstreamAuth = async (req, res, next) => {
       if (cachedMongoId && mongoose.Types.ObjectId.isValid(cachedMongoId)) {
         resolvedObjectId = new mongoose.Types.ObjectId(cachedMongoId);
       } else {
-        const dbUser = await User.findOne({ googleId: rawUserId });
+        const userEmail = (req.headers['x-user-email'] || '').toLowerCase().trim();
+        const query = userEmail
+          ? { $or: [{ googleId: String(rawUserId) }, { email: userEmail }] }
+          : { googleId: String(rawUserId) };
+        const dbUser = await User.findOne(query);
         if (dbUser) {
           resolvedObjectId = dbUser._id;
+          if (!dbUser.googleId && rawUserId) {
+            dbUser.googleId = String(rawUserId);
+            await dbUser.save();
+          }
           await setCache(`sentio:user:${rawUserId}:mongoid`, dbUser._id.toString(), 604800);
         } else {
           // User not found — sync may not have completed yet.
           // Return 404 so the client knows to trigger /auth/google sync first.
-          console.warn(`[DownstreamAuth] User with googleId ${rawUserId} not found in DB — sync may be pending`);
+          console.warn(`[DownstreamAuth] User with googleId ${rawUserId} (email: ${userEmail}) not found in DB — sync may be pending`);
           return res.status(404).json({
             success: false,
             message: 'User account not found. Please sign in again.',

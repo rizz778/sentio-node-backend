@@ -200,7 +200,14 @@ export const deleteProfilePicture = async (req, res) => {
  */
 export const getUserEmotionAnalytics = async (req, res) => {
   try {
-    const userId = req.user?.id || req.user?._id;
+    let userId = req.user?.id || req.user?._id;
+
+    if (userId && !mongoose.Types.ObjectId.isValid(userId)) {
+      const dbUser = await User.findOne({ googleId: String(userId) }).select('_id');
+      if (dbUser) {
+        userId = dbUser._id;
+      }
+    }
 
     const userSessions = await Chat.find({ user: userId }).lean();
 

@@ -16,8 +16,10 @@ router.use(downstreamAuth);
 
 // ── Specific routes MUST come before parameterized /:userId ─────────────────
 router.get('/emotion/user', getUserEmotionAnalytics);
-router.get('/user/analytics', getUserEmotionAnalytics);
-router.get('/analytics', getUserEmotionAnalytics);
+// router.get('/user/analytics', getUserEmotionAnalytics);
+// router.get('/analytics', getUserEmotionAnalytics);
+// router.get('/emotion', getUserEmotionAnalytics);
+// router.get('/emotions', getUserEmotionAnalytics);
 
 router.post('/upload-picture', upload.single('profilePicture'), uploadProfilePicture);
 router.delete('/delete-picture', deleteProfilePicture);
