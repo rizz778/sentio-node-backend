@@ -43,7 +43,7 @@ const messageSchema = new mongoose.Schema({
   // New fields for emotion tracking
   emotion: {
     type: String,
-    enum: ["happy", "sad", "angry", "fear", "surprise", "disgust", "neutral", "unknown"],
+    enum: ["happy", "sad", "angry", "fear", "anxious", "surprise", "disgust", "neutral", "unknown"],
     default: "unknown"
   },
   distressScore: {
