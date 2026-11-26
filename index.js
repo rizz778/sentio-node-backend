@@ -9,6 +9,7 @@ import requestLogger from './middlewares/logger.js';
 import authRouter from './routes/authRouter.js';
 import chatRouter from './routes/chatRouter.js';
 import profileRouter from './routes/profileRouter.js';
+import episodeRouter from './routes/episodeRouter.js';
 
 // Load environment variables
 dotenv.config();
@@ -49,6 +50,7 @@ app.use('/internal/users', authRouter); // For Gateway internal user creation/sy
 app.use('/api/auth', authRouter);       // For proxied auth sync requests
 app.use('/api/chat', chatRouter);
 app.use('/api/profile', profileRouter);
+app.use('/api/episodes', episodeRouter);
 
 // Global Error Handler
 app.use(errorHandler);
